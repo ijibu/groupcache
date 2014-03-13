@@ -27,6 +27,7 @@ type Cache struct {
 
 	// OnEvicted optionally specificies a callback function to be
 	// executed when an entry is purged from the cache.
+	//回调函数，当一个实体从缓存中移除时触发。
 	OnEvicted func(key Key, value interface{})
 
 	ll    *list.List
@@ -53,28 +54,34 @@ func New(maxEntries int) *Cache {
 }
 
 // Add adds a value to the cache.
+//添加一个元素到缓存中
 func (c *Cache) Add(key Key, value interface{}) {
 	if c.cache == nil {
 		c.cache = make(map[interface{}]*list.Element)
 		c.ll = list.New()
 	}
+	//如果改key已经存在，则将该key移到链表的首部，并赋予新值。
 	if ee, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(ee)
 		ee.Value.(*entry).value = value
 		return
 	}
+	//如果改key不存在，则将该key放到连表的首部。
 	ele := c.ll.PushFront(&entry{key, value})
 	c.cache[key] = ele
+	//如果设置了最大缓存数，并且链表长度已经超过了最大缓存数，则把最老的元素移除。
 	if c.MaxEntries != 0 && c.ll.Len() > c.MaxEntries {
 		c.RemoveOldest()
 	}
 }
 
 // Get looks up a key's value from the cache.
+//在缓存中查找key
 func (c *Cache) Get(key Key) (value interface{}, ok bool) {
 	if c.cache == nil {
 		return
 	}
+	//查找到则返回，并且把改元素移动到链表的首部。
 	if ele, hit := c.cache[key]; hit {
 		c.ll.MoveToFront(ele)
 		return ele.Value.(*entry).value, true
@@ -83,6 +90,7 @@ func (c *Cache) Get(key Key) (value interface{}, ok bool) {
 }
 
 // Remove removes the provided key from the cache.
+//在缓存中移除key
 func (c *Cache) Remove(key Key) {
 	if c.cache == nil {
 		return
@@ -93,6 +101,7 @@ func (c *Cache) Remove(key Key) {
 }
 
 // RemoveOldest removes the oldest item from the cache.
+//移除缓存中最老的一个元素
 func (c *Cache) RemoveOldest() {
 	if c.cache == nil {
 		return
@@ -103,6 +112,7 @@ func (c *Cache) RemoveOldest() {
 	}
 }
 
+//删除缓存中的某个元素（私有方法）
 func (c *Cache) removeElement(e *list.Element) {
 	c.ll.Remove(e)
 	kv := e.Value.(*entry)
@@ -113,6 +123,7 @@ func (c *Cache) removeElement(e *list.Element) {
 }
 
 // Len returns the number of items in the cache.
+//返回缓存中的元素个数
 func (c *Cache) Len() int {
 	if c.cache == nil {
 		return 0
