@@ -358,6 +358,7 @@ type cache struct {
 	nevict     int64 // number of evictions
 }
 
+//初始化一个CacheStats对象
 func (c *cache) stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -370,6 +371,7 @@ func (c *cache) stats() CacheStats {
 	}
 }
 
+//添加一个{key:value}到缓存中
 func (c *cache) add(key string, value ByteView) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -386,6 +388,7 @@ func (c *cache) add(key string, value ByteView) {
 	c.nbytes += int64(len(key)) + int64(value.Len())
 }
 
+//从缓存中获取key的value
 func (c *cache) get(key string) (value ByteView, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -401,6 +404,7 @@ func (c *cache) get(key string) (value ByteView, ok bool) {
 	return vi.(ByteView), true
 }
 
+//移除缓存中最早的一个{key:value}
 func (c *cache) removeOldest() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -409,18 +413,21 @@ func (c *cache) removeOldest() {
 	}
 }
 
+//返回c.nbytes的值
 func (c *cache) bytes() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.nbytes
 }
 
+//返回缓存中的key数量
 func (c *cache) items() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.itemsLocked()
 }
 
+//返回缓存中的key数量
 func (c *cache) itemsLocked() int64 {
 	if c.lru == nil {
 		return 0
@@ -446,10 +453,11 @@ func (i *AtomicInt) String() string {
 }
 
 // CacheStats are returned by stats accessors on Group.
+// 缓存统计信息
 type CacheStats struct {
-	Bytes     int64
-	Items     int64
-	Gets      int64
-	Hits      int64
+	Bytes     int64 //大小
+	Items     int64 //缓存项数量
+	Gets      int64 //请求次数
+	Hits      int64 //命中次数
 	Evictions int64
 }
