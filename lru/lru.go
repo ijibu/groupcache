@@ -15,26 +15,43 @@ limitations under the License.
 */
 
 // Package lru implements an LRU cache.
+/*
+LRU 最近最少使用算法，LRU算法主要用于缓存淘汰。
+原理：
+
+添加元素时，放到链表头
+缓存命中，将元素移动到链表头
+缓存满了之后，将链表尾的元素删除
+
+LRU实现：
+
+可以用一个双向链表保存数据
+使用hash实现O(1)的访问
+*/
 package lru
 
 import "container/list"
 
 // Cache is an LRU cache. It is not safe for concurrent access.
+//Cache 结构体，定义lru cache 不是线程安全的
 type Cache struct {
 	// MaxEntries is the maximum number of cache entries before
 	// an item is evicted. Zero means no limit.
+	// 数目限制，0是无限制
 	MaxEntries int
 
 	// OnEvicted optionally specificies a callback function to be
 	// executed when an entry is purged from the cache.
-	//回调函数，当一个实体从缓存中移除时触发。
+	// 删除时, 可以添加可选的回调函数
 	OnEvicted func(key Key, value interface{})
 
+	// 使用链表保存数据
 	ll    *list.List
 	cache map[interface{}]*list.Element
 }
 
 // A Key may be any value that is comparable. See http://golang.org/ref/spec#Comparison_operators
+// Key 是任何可以比较的值
 type Key interface{}
 
 type entry struct {

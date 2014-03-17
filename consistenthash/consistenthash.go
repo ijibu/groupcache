@@ -15,6 +15,9 @@ limitations under the License.
 */
 
 // Package consistenthash provides an implementation of a ring hash.
+//一致性哈希算法,参考分析：http://blog.segmentfault.com/lds/1190000000414004
+//一致性哈希算法主要使用在分布式数据存储系统中，按照一定的策略将数据尽可能均匀分布到
+//所有的存储节点上去，使得系统具有良好的负载均衡性能和扩展性。
 package consistenthash
 
 import (
@@ -25,8 +28,12 @@ import (
 
 type Hash func(data []byte) uint32
 
+//Map 结构，定义核心数据结构,其中hash是哈希函数，用于对key进行hash，keys字段保存所有的节点（包括虚拟节点）是可排序的，
+//hashmap 则是虚拟节点到真实节点的映射。一致性哈希算法在服务节点太少时，容易因为节点分部不均匀而造成数据倾斜问题。
+//一致性哈希算法引入了虚拟节点机制，即对每一个服务节点计算多个哈希，每个计算结果位置都放置一个此服务节点，称为虚拟节点。
+//replicas是指的是每个节点和虚拟节点的个数。
 type Map struct {
-	hash     Hash
+	hash     Hash // hash 函数
 	replicas int
 	keys     []int // Sorted
 	hashMap  map[int]string
@@ -50,6 +57,14 @@ func (m *Map) IsEmpty() bool {
 }
 
 // Adds some keys to the hash.
+//Map的Add方法，添加节点到圆环，参数是一个或者多个string，对每一个key关键字进行哈希，这样每台机器就能确定其在哈希环上的位置，在添加每个关键字的时候，并添加对应的虚拟节点，每个真实节点和虚拟节点个数有replicas字段指定，保存虚拟节点到真实节点的对应关系到hashmap字段。
+//比如在测试用例中，  hash.Add("6", "4", "2")，则所有的节点是 2, 4, 6, 12, 14, 16, 22, 24, 26, 当has.Get('11') 时，对应的节点是12，而12对应的真实节点是2
+
+//hash.Add("6", "4", "2")是数据值：
+
+//2014/02/20 15:45:16 replicas: 3
+//2014/02/20 15:45:16 keys: [2 4 6 12 14 16 22 24 26]
+//2014/02/20 15:45:16 hashmap map[16:6 26:6 4:4 24:4 2:2 6:6 14:4 12:2 22:2]
 func (m *Map) Add(keys ...string) {
 	for _, key := range keys {
 		for i := 0; i < m.replicas; i++ {
@@ -62,6 +77,8 @@ func (m *Map) Add(keys ...string) {
 }
 
 // Gets the closest item in the hash to the provided key.
+//Get方法根据提供的key定位数据访问到相应服务器节点，算法是：将数据key使用相同的哈希函数H计算出哈希值h，
+//通根据h确定此数据在环上的位置，从此位置沿环顺时针“行走”，第一台遇到的服务器就是其应该定位到的服务器。
 func (m *Map) Get(key string) string {
 	if m.IsEmpty() {
 		return ""
@@ -70,12 +87,14 @@ func (m *Map) Get(key string) string {
 	hash := int(m.hash([]byte(key)))
 
 	// Linear search for appropriate replica.
+	// 顺时针“行走”，找到第一个大于哈希值的节点
 	for _, v := range m.keys {
 		if v >= hash {
-			return m.hashMap[v]
+			return m.hashMap[v] // 返回真实节点
 		}
 	}
 
 	// Means we have cycled back to the first replica.
+	// hash值大于最大节点哈希值的情况
 	return m.hashMap[m.keys[0]]
 }

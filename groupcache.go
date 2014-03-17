@@ -14,6 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+/*
+不同于memcached，groupcache面向的是静态的缓存系统，比如google家的下载站，用来缓存对应的文件区块。
+一经set操作，key对应的value就不再变化。使用的时候，需要自定义缓存缺失时使用的set操作。
+当发生miss的时候，首先会从根据key的consist hash值找到对应的peer，去peer里寻找对应的value。
+如果找不到，则使用自定义的get函数从慢缓存（比如db，文件读取）获取alue，并填充对应peer。
+下一次获取，就直接从cache里取出来，不再访问慢缓存。另外，为避免网络变成瓶颈，本地peer获取cache后，
+会存在本地的localCache里，通过LRU算法进行管理。
+参考：http://www.cnblogs.com/Lifehacker/p/groupcache_inside.html
+*/
+
 // Package groupcache provides a data loading mechanism with caching
 // and de-duplication that works across a set of peer processes.
 //

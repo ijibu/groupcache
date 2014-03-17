@@ -2,6 +2,7 @@
 // source: groupcache.proto
 // DO NOT EDIT!
 
+//groupcache的protobuf协议
 package groupcachepb
 
 import proto "code.google.com/p/goprotobuf/proto"
