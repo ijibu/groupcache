@@ -31,9 +31,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	pb "github.com/golang/groupcache/groupcachepb"
-	"github.com/golang/groupcache/lru"
-	"github.com/golang/groupcache/singleflight"
+	pb "github.com/ijibu/groupcache/groupcachepb"
+	"github.com/ijibu/groupcache/lru"
+	"github.com/ijibu/groupcache/singleflight"
 )
 
 // A Getter loads data for a key.
@@ -64,6 +64,7 @@ var (
 
 // GetGroup returns the named group previously created with NewGroup, or
 // nil if there's no such group.
+// 根据name从全局变量groups（一个string/group的map）查找对于group
 func GetGroup(name string) *Group {
 	mu.RLock()
 	g := groups[name]
@@ -80,6 +81,7 @@ func GetGroup(name string) *Group {
 // completes.
 //
 // The group name must be unique for each getter.
+// 创建一个新的group，如果已经存在该name的group将会抛出一个异常，go里面叫panic
 func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	return newGroup(name, cacheBytes, getter, nil)
 }
@@ -113,6 +115,7 @@ var newGroupHook func(*Group)
 
 // RegisterNewGroupHook registers a hook that is run each time
 // a group is created.
+// 注册一个创建新group的钩子，比如将group打印出来等，全局只能注册一次，多次注册会触发panic
 func RegisterNewGroupHook(fn func(*Group)) {
 	if newGroupHook != nil {
 		panic("RegisterNewGroupHook called more than once")
@@ -122,6 +125,7 @@ func RegisterNewGroupHook(fn func(*Group)) {
 
 // RegisterServerStart registers a hook that is run when the first
 // group is created.
+// 注册一个服务，该服务在NewGroup开始时被调用，并且只被调用一次
 func RegisterServerStart(fn func()) {
 	if initPeerServer != nil {
 		panic("RegisterServerStart called more than once")
@@ -137,17 +141,21 @@ func callInitPeerServer() {
 
 // A Group is a cache namespace and associated data loaded spread over
 // a group of 1 or more machines.
+//该类是GroupCache的核心类，所有的其他包都是为该类服务的。groupcache支持namespace概念，不同的namespace有自己的配额以及cache，
+//不同group之间cache是独立的也就是不能存在某个group的行为影响到另外一个namespace的情况 groupcache的每个节点的cache分为2层，
+//由本节点直接访问后端的存在maincache，其他存在在hotcache
 type Group struct {
-	name       string
-	getter     Getter
-	peersOnce  sync.Once
-	peers      PeerPicker
-	cacheBytes int64 // limit for sum of mainCache and hotCache size
+	name       string     // group名，可以理解为namespace的名字，group其实就是一个namespace
+	getter     Getter     // 由调用方传入的回调，用于groupcache访问后端数据
+	peersOnce  sync.Once  //sync.Once is an object that will perform exactly one action.通过该对象可以达到只调用一次
+	peers      PeerPicker // 用于访问groupcache中其他节点的接口，比如上面的HTTPPool实现了该接口
+	cacheBytes int64      // limit for sum of mainCache and hotCache size.cache的总大小
 
 	// mainCache is a cache of the keys for which this process
 	// (amongst its peers) is authorative. That is, this cache
 	// contains keys which consistent hash on to this process's
 	// peer number.
+	// 从本节点指向向后端获取到的数据存在在cache中
 	mainCache cache
 
 	// hotCache contains keys/values for which this peer is not
@@ -158,14 +166,17 @@ type Group struct {
 	// network card could become the bottleneck on a popular key.
 	// This cache is used sparingly to maximize the total number
 	// of key/value pairs that can be stored globally.
+	// 从groupcache中其他节点上获取到的数据存在在该cache中，因为是用其他节点获取到的，也就是说这个数据存在多份，也就是所谓的hot
 	hotCache cache
 
 	// loadGroup ensures that each key is only fetched once
 	// (either locally or remotely), regardless of the number of
 	// concurrent callers.
+	// 用于向groupcache中其他节点访问时合并请求
 	loadGroup singleflight.Group
 
 	// Stats are statistics on the group.
+	// 统计信息
 	Stats Stats
 }
 
@@ -193,14 +204,23 @@ func (g *Group) initPeers() {
 	}
 }
 
+//整个groupcache核心方法就这么一个
+//这里需要说明的是A向groupcache中其他节点B发送请求，此时B是调用Get方法，然后如果本地不存在则也会走load，但是不同的是
+//PickPeer会发现是本身节点（HTTPPOOL的实现），然后就会走getLocally，会将数据在B的maincache中填充一份，也就是说如果
+//是向groupcache中其他节点发请求的，会一下子在groupcache集群内存2分数据，一份在B的maincache里，一份在A的hotcache中，
+//这也就达到了自动复制，越是热点的数据越是在集群内份数多，也就达到了解决热点数据的问题
 func (g *Group) Get(ctx Context, key string, dest Sink) error {
+	// 初始化peers，全局初始化一次
 	g.peersOnce.Do(g.initPeers)
+	// 统计信息gets增1
 	g.Stats.Gets.Add(1)
 	if dest == nil {
 		return errors.New("groupcache: nil dest Sink")
 	}
+	// 查找本地是否存在该key，先查maincache，再查hotcache
 	value, cacheHit := g.lookupCache(key)
 
+	// 如果查到就hit增1，并返回
 	if cacheHit {
 		g.Stats.CacheHits.Add(1)
 		return setSinkView(dest, value)
@@ -210,6 +230,8 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 	// track of whether the dest was already populated. One caller
 	// (if local) will set this; the losers will not. The common
 	// case will likely be one caller.
+	// 加载该key到本地cache中，其中如果是本地直接请求后端得到的数据，并且是同一个时间段里第一个，
+	// 就不需要重新setSinkView了，在load中已经设置过了，destPopulated这个参数以来底的实现
 	destPopulated := false
 	value, destPopulated, err := g.load(ctx, key, dest)
 	if err != nil {
@@ -223,12 +245,18 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 
 // load loads key either by invoking the getter locally or by sending it to another machine.
 func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPopulated bool, err error) {
+	// 统计loads增1
 	g.Stats.Loads.Add(1)
+	// 使用singleflight来达到合并请求
 	viewi, err := g.loadGroup.Do(key, func() (interface{}, error) {
+		// 统计信息真正发送请求的次数增1
 		g.Stats.LoadsDeduped.Add(1)
 		var value ByteView
 		var err error
+
+		// 选取向哪个节点发送请求，比如HTTPPool中的PickPeer实现
 		if peer, ok := g.peers.PickPeer(key); ok {
+			// 从groupcache中其他节点获取数据，并将数据存入hotcache
 			value, err = g.getFromPeer(ctx, peer, key)
 			if err == nil {
 				g.Stats.PeerLoads.Add(1)
@@ -240,6 +268,9 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 			// probably boring (normal task movement), so not
 			// worth logging I imagine.
 		}
+
+		// 如果选取的节点就是本节点或从其他节点获取失败，则由本节点去获取数据，也就是调用getter接口的Get方法
+		// 另外我们看到这里dest已经被赋值了，所以有destPopulated来表示已经赋值过不需要再赋值
 		value, err = g.getLocally(ctx, key, dest)
 		if err != nil {
 			g.Stats.LocalLoadErrs.Add(1)
@@ -247,6 +278,7 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 		}
 		g.Stats.LocalLoads.Add(1)
 		destPopulated = true // only one caller of load gets this return value
+		// 将获取的数据放入maincache
 		g.populateCache(key, value, &g.mainCache)
 		return value, nil
 	})
@@ -350,6 +382,7 @@ func (g *Group) CacheStats(which CacheType) CacheStats {
 // cache is a wrapper around an *lru.Cache that adds synchronization,
 // makes values always be ByteView, and counts the size of all keys and
 // values.
+//Cache的实现很简单基本可以认为就是直接在LRU上面包了一层，加上了统计信息，锁，以及大小限制
 type cache struct {
 	mu         sync.RWMutex
 	nbytes     int64 // of all keys and values
@@ -358,7 +391,7 @@ type cache struct {
 	nevict     int64 // number of evictions
 }
 
-//初始化一个CacheStats对象
+//返回统计信息，加读锁
 func (c *cache) stats() CacheStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -371,7 +404,7 @@ func (c *cache) stats() CacheStats {
 	}
 }
 
-//添加一个{key:value}到缓存中
+// 加入一个kv，如果cache的大小超过nbytes了，就淘汰
 func (c *cache) add(key string, value ByteView) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -388,7 +421,7 @@ func (c *cache) add(key string, value ByteView) {
 	c.nbytes += int64(len(key)) + int64(value.Len())
 }
 
-//从缓存中获取key的value
+// 根据key返回value
 func (c *cache) get(key string) (value ByteView, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -404,7 +437,7 @@ func (c *cache) get(key string) (value ByteView, ok bool) {
 	return vi.(ByteView), true
 }
 
-//移除缓存中最早的一个{key:value}
+// 删除最久没被访问的数据
 func (c *cache) removeOldest() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -413,21 +446,21 @@ func (c *cache) removeOldest() {
 	}
 }
 
-//返回c.nbytes的值
+// 获取当前cache的大小
 func (c *cache) bytes() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.nbytes
 }
 
-//返回缓存中的key数量
+// 获取当前cache中kv的个数，内部会加读锁
 func (c *cache) items() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.itemsLocked()
 }
 
-//返回缓存中的key数量
+// 获取当前cache中kv的个数，函数名中的Locked的意思是调用方已经加锁，比如上面的stats方法
 func (c *cache) itemsLocked() int64 {
 	if c.lru == nil {
 		return 0

@@ -25,8 +25,8 @@ import (
 	"sync"
 
 	"code.google.com/p/goprotobuf/proto"
-	"github.com/golang/groupcache/consistenthash"
-	pb "github.com/golang/groupcache/groupcachepb"
+	"github.com/ijibu/groupcache/consistenthash"
+	pb "github.com/ijibu/groupcache/groupcachepb"
 )
 
 // TODO: make this configurable?
@@ -64,6 +64,7 @@ var httpPoolMade bool
 // http.DefaultServeMux.
 // The self argument be a valid base URL that points to the current server,
 // for example "http://example.net:8000".
+// 创建一个HttpPool, 只能被使用一次，主要是注册PeerPicker，以及初始化http服务
 func NewHTTPPool(self string) *HTTPPool {
 	if httpPoolMade {
 		panic("groupcache: NewHTTPPool must be called only once")
@@ -76,8 +77,9 @@ func NewHTTPPool(self string) *HTTPPool {
 }
 
 // Set updates the pool's list of peers.
-// Each peer value should be a valid base URL,
+// Each peer(节点) value should be a valid base URL,
 // for example "http://example.net:8000".
+// 设置groupcache集群的节点列表
 func (p *HTTPPool) Set(peers ...string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -85,6 +87,8 @@ func (p *HTTPPool) Set(peers ...string) {
 	p.peers.Add(peers...)
 }
 
+// 提供按key选取节点，按key作hash，但是这段代码在OS为32bit是存在bug，如果算出来的hashcode正好是-1 * 2^31时
+// 会导致out of range，为啥会有这个bug看看代码你就会发现了，作者忘了-1 * 2^31 <= int32 <= 1 * 2^31 -1
 func (p *HTTPPool) PickPeer(key string) (ProtoGetter, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -99,6 +103,7 @@ func (p *HTTPPool) PickPeer(key string) (ProtoGetter, bool) {
 	return nil, false
 }
 
+// http服务处理函数，主要是按http://example.com/groupname/key解析请求，调用group.Get，按协议返回请求
 func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Parse request.
 	if !strings.HasPrefix(r.URL.Path, p.basePath) {
@@ -147,11 +152,15 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+// groupcache提供了一个节点互相访问访问的类
 type httpGetter struct {
 	transport func(Context) http.RoundTripper
 	baseURL   string
 }
 
+// 协议为GET http://example.com/groupname/key
+// response见groupcache.proto，含有2个可选项分别为[]byte和double
+// 实现默认使用go自带的net/http包直接发送请求
 func (h *httpGetter) Get(context Context, in *pb.GetRequest, out *pb.GetResponse) error {
 	u := fmt.Sprintf(
 		"%v%v/%v",
