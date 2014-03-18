@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package consistenthash provides an implementation of a ring hash.
-//一致性哈希算法,参考分析：http://blog.segmentfault.com/lds/1190000000414004
+//一致性哈希算法,参考分析：http://blog.segmentfault.com/lds/1190000000414004，http://blog.codinglabs.org/articles/consistent-hashing.html
 //一致性哈希算法主要使用在分布式数据存储系统中，按照一定的策略将数据尽可能均匀分布到
 //所有的存储节点上去，使得系统具有良好的负载均衡性能和扩展性。
 package consistenthash
@@ -31,10 +31,9 @@ type Hash func(data []byte) uint32
 //Map 结构，定义核心数据结构,其中hash是哈希函数，用于对key进行hash，keys字段保存所有的节点（包括虚拟节点）是可排序的，
 //hashmap 则是虚拟节点到真实节点的映射。一致性哈希算法在服务节点太少时，容易因为节点分部不均匀而造成数据倾斜问题。
 //一致性哈希算法引入了虚拟节点机制，即对每一个服务节点计算多个哈希，每个计算结果位置都放置一个此服务节点，称为虚拟节点。
-//replicas是指的是每个节点和虚拟节点的个数。
 type Map struct {
-	hash     Hash // hash 函数
-	replicas int
+	hash     Hash  // hash 函数
+	replicas int   // replicas是指的是每个节点和虚拟节点的个数。
 	keys     []int // Sorted
 	hashMap  map[int]string
 }
