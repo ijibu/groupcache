@@ -15,9 +15,12 @@ limitations under the License.
 */
 
 // Package consistenthash provides an implementation of a ring hash.
-//一致性哈希算法,参考分析：http://blog.segmentfault.com/lds/1190000000414004，http://blog.codinglabs.org/articles/consistent-hashing.html
-//一致性哈希算法主要使用在分布式数据存储系统中，按照一定的策略将数据尽可能均匀分布到
-//所有的存储节点上去，使得系统具有良好的负载均衡性能和扩展性。
+/*一致性哈希算法,参考分析：
+http://blog.segmentfault.com/lds/1190000000414004，
+http://blog.codinglabs.org/articles/consistent-hashing.html
+一致性哈希算法主要使用在分布式数据存储系统中，按照一定的策略将数据尽可能均匀分布到
+所有的存储节点上去，使得系统具有良好的负载均衡性能和扩展性。
+*/
 package consistenthash
 
 import (
@@ -56,14 +59,30 @@ func (m *Map) IsEmpty() bool {
 }
 
 // Adds some keys to the hash.
-//Map的Add方法，添加节点到圆环，参数是一个或者多个string，对每一个key关键字进行哈希，这样每台机器就能确定其在哈希环上的位置，在添加每个关键字的时候，并添加对应的虚拟节点，每个真实节点和虚拟节点个数有replicas字段指定，保存虚拟节点到真实节点的对应关系到hashmap字段。
-//比如在测试用例中，  hash.Add("6", "4", "2")，则所有的节点是 2, 4, 6, 12, 14, 16, 22, 24, 26, 当has.Get('11') 时，对应的节点是12，而12对应的真实节点是2
+/*Map的Add方法，添加节点到圆环，参数是一个或者多个string，对每一个key关键字进行哈希，
+这样每台机器就能确定其在哈希环上的位置，在添加每个关键字的时候，并添加对应的虚拟节点，
+每个真实节点和虚拟节点个数由replicas字段指定，保存虚拟节点到真实节点的对应关系到hashmap字段。
+比如在测试用例中，hash.Add("6", "4", "2")，则所有的节点是 2, 4, 6, 12, 14, 16, 22, 24, 26,
+当has.Get('11') 时，对应的节点是12，而12对应的真实节点是2
 
-//hash.Add("6", "4", "2")是数据值：
+hash.Add("6", "4", "2")是数据值：
 
-//2014/02/20 15:45:16 replicas: 3
-//2014/02/20 15:45:16 keys: [2 4 6 12 14 16 22 24 26]
-//2014/02/20 15:45:16 hashmap map[16:6 26:6 4:4 24:4 2:2 6:6 14:4 12:2 22:2]
+2014/02/20 15:45:16 replicas: 3
+2014/02/20 15:45:16 keys: [2 4 6 12 14 16 22 24 26]
+2014/02/20 15:45:16 hashmap map[16:6 26:6 4:4 24:4 2:2 6:6 14:4 12:2 22:2]
+
+说明: 此处添加虚拟节点的算法是有问题的，比如replicas = 3，传入的key为2,12,22，则就会出现某个节点的虚拟实际上就是
+另外的真实节点。不过在groupcache中的应用不存在这个情况，因为keys都是字符串，而且是host:port形式的字符串，所以
+就不会出现上面的情况。
+在php-memcache中也实现了一致性hash算法的，在计算虚拟节点的时候，采用的是类似的算法。相关源码是：
+memcache_consistent_hash.c mmc_consistent_add_server函数内部：
+for (i=0; i<points; i++) {
+	key_len = sprintf(key, "%s:%d-%d", mmc->host, mmc->port, i);
+	state->points[state->num_points + i].server = mmc;
+	state->points[state->num_points + i].point = state->hash(key, key_len);
+	MMC_DEBUG(("mmc_consistent_add_server: key %s, point %lu", key, state->points[state->num_points + i].point));
+}
+*/
 func (m *Map) Add(keys ...string) {
 	for _, key := range keys {
 		for i := 0; i < m.replicas; i++ {
@@ -86,7 +105,11 @@ func (m *Map) Get(key string) string {
 	hash := int(m.hash([]byte(key)))
 
 	// Linear search for appropriate replica.
-	// 顺时针“行走”，找到第一个大于哈希值的节点
+	/*
+		顺时针“行走”，找到第一个大于哈希值的节点
+		此处其实可以进行优化，m.keys是有序的，此处是采用的顺序查找算法，当keys较多的时候还是会影响
+		性能，所以可以采用其它效率更高的查找算法。
+	*/
 	for _, v := range m.keys {
 		if v >= hash {
 			return m.hashMap[v] // 返回真实节点
