@@ -254,6 +254,7 @@ func (g *Group) Get(ctx Context, key string, dest Sink) error {
 }
 
 // load loads key either by invoking the getter locally or by sending it to another machine.
+// 调用本地的回调函数getter获取key的值或者发送到其它服务器获取key值。
 func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPopulated bool, err error) {
 	// 统计loads增1
 	g.Stats.Loads.Add(1)
