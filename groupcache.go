@@ -288,7 +288,7 @@ func (g *Group) load(ctx Context, key string, dest Sink) (value ByteView, destPo
 		}
 		g.Stats.LocalLoads.Add(1)
 		destPopulated = true // only one caller of load gets this return value
-		// 将获取的数据放入maincache
+		// 将获取的数据放入本地缓存maincache
 		g.populateCache(key, value, &g.mainCache)
 		return value, nil
 	})
@@ -338,6 +338,7 @@ func (g *Group) lookupCache(key string) (value ByteView, ok bool) {
 	return
 }
 
+//往缓存填充数据
 func (g *Group) populateCache(key string, value ByteView, cache *cache) {
 	if g.cacheBytes <= 0 {
 		return
@@ -345,6 +346,7 @@ func (g *Group) populateCache(key string, value ByteView, cache *cache) {
 	cache.add(key, value)
 
 	// Evict items from cache(s) if necessary.
+	// 死循环。会一直执行，直到缓存容量没有超载的情况下，才会停止循环。
 	for {
 		mainBytes := g.mainCache.bytes()
 		hotBytes := g.hotCache.bytes()
