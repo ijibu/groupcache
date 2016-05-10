@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -43,8 +41,8 @@ func generateThumbnail1(filename string) ([]byte, error) {
 func FileHandler(w http.ResponseWriter, r *http.Request) {
 	var ctx groupcache.Context
 	key := r.URL.Path
-	fmt.Println("KEY:", key)
 	var data []byte
+	fmt.Println("KEY:", key)
 	err := thumbNails.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -56,17 +54,21 @@ func FileHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, filepath.Base(key), modTime, rd)
 }
 
-var (
-	mirror   = flag.String("mirror", "", "Mirror Web Base URL")
-	logfile  = flag.String("log", "-", "Set log file, default STDOUT")
-	upstream = flag.String("upstream", "", "Server base URL, conflict with -mirror")
-	address  = flag.String("addr", ":5000", "Listen address")
-)
-
 func main() {
-	flag.Parse()
+	key := "ijibu"
+	var ctx groupcache.Context
+	var data []byte
+	err := thumbNails.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	fmt.Println(string(data))
 
-	fmt.Println("Hello CDN")
-	http.HandleFunc("/", FileHandler)
-	log.Fatal(http.ListenAndServe(":5000", nil))
+	err = thumbNails.Get(ctx, key, groupcache.AllocatingByteSliceSink(&data))
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	fmt.Println(string(data))
 }
