@@ -77,13 +77,13 @@ func (c *Cache) Add(key Key, value interface{}) {
 		c.cache = make(map[interface{}]*list.Element)
 		c.ll = list.New()
 	}
-	//如果改key已经存在，则将该key移到链表的首部，并赋予新值。
+	//如果该key已经存在，则将该key移到链表的首部，并赋予新值。
 	if ee, ok := c.cache[key]; ok {
 		c.ll.MoveToFront(ee)
 		ee.Value.(*entry).value = value
 		return
 	}
-	//如果改key不存在，则将该key放到连表的首部。
+	//如果该key不存在，则将该key放到连表的首部。
 	ele := c.ll.PushFront(&entry{key, value})
 	c.cache[key] = ele
 	//如果设置了最大缓存数，并且链表长度已经超过了最大缓存数，则把最老的元素移除。

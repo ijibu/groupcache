@@ -28,12 +28,14 @@ import (
 type Context interface{}
 
 // ProtoGetter is the interface that must be implemented by a peer.
+// 表示一个远端节点，Get方法从远端节点查询数据
 type ProtoGetter interface {
 	Get(context Context, in *pb.GetRequest, out *pb.GetResponse) error
 }
 
 // PeerPicker is the interface that must be implemented to locate
 // the peer that owns a specific key.
+// 接口PeerPicker表示一个路由器，PickPeer方法将给定key路由到其归属的远端节点，如果key归属于本节点，PickPeer方法返回nil。
 type PeerPicker interface {
 	// PickPeer returns the peer that owns the specific key
 	// and true to indicate that a remote peer was nominated.
