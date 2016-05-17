@@ -2,7 +2,7 @@
 // source: groupcache.proto
 // DO NOT EDIT!
 
-//groupcache的protobuf协议
+//groupcache的protobuf协议，由程序根据groupcache.proto自动生成的代码。
 package groupcachepb
 
 import proto "code.google.com/p/goprotobuf/proto"
@@ -10,6 +10,7 @@ import json "encoding/json"
 import math "math"
 
 // Reference proto, json, and math imports to suppress error if they are not otherwise used.
+// 这是小技巧：避免导入了proto、json和math包，而在其它地方没有使用导致报错。
 var _ = proto.Marshal
 var _ = &json.SyntaxError{}
 var _ = math.Inf

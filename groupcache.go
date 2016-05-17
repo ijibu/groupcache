@@ -307,6 +307,7 @@ func (g *Group) getLocally(ctx Context, key string, dest Sink) (ByteView, error)
 	return dest.view()
 }
 
+//从远方服务器节点peer中获取缓存，并按照一定的概率写入本地的hotCache中。
 func (g *Group) getFromPeer(ctx Context, peer ProtoGetter, key string) (ByteView, error) {
 	req := &pb.GetRequest{
 		Group: &g.name,
@@ -321,12 +322,16 @@ func (g *Group) getFromPeer(ctx Context, peer ProtoGetter, key string) (ByteView
 	// TODO(bradfitz): use res.MinuteQps or something smart to
 	// conditionally populate hotCache.  For now just do it some
 	// percentage of the time.
+	//把从其他服务器上获取的缓存随机概率10%写入本地缓存
 	if rand.Intn(10) == 0 {
 		g.populateCache(key, value, &g.hotCache)
 	}
+	//为了测试，改为每次都写入本地缓存
+	//g.populateCache(key, value, &g.hotCache)
 	return value, nil
 }
 
+// 查找本地是否存在该key，先查maincache，再查hotcache
 func (g *Group) lookupCache(key string) (value ByteView, ok bool) {
 	if g.cacheBytes <= 0 {
 		return

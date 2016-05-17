@@ -87,6 +87,7 @@ func (p *HTTPPool) Set(peers ...string) {
 	p.peers.Add(peers...)
 }
 
+// 根据key从远方获取value
 // 提供按key选取节点，按key作hash，但是这段代码在OS为32bit是存在bug，如果算出来的hashcode正好是-1 * 2^31时
 // 会导致out of range，为啥会有这个bug看看代码你就会发现了，作者忘了-1 * 2^31 <= int32 <= 1 * 2^31 -1
 func (p *HTTPPool) PickPeer(key string) (ProtoGetter, bool) {
@@ -95,9 +96,11 @@ func (p *HTTPPool) PickPeer(key string) (ProtoGetter, bool) {
 	if p.peers.IsEmpty() {
 		return nil, false
 	}
+	//找到key存在那个真实的节点中
 	if peer := p.peers.Get(key); peer != p.self {
 		// TODO: pre-build a slice of *httpGetter when Set()
 		// is called to avoid these two allocations.
+		// 返回服务器节点的信息
 		return &httpGetter{p.Transport, peer + p.basePath}, true
 	}
 	return nil, false
