@@ -2,18 +2,19 @@ package main
 
 import (
 	"fmt"
-	groupcache "github.com/ijibu/groupcache"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/ijibu/groupcache"
 )
 
 func main() {
 	// Usage: ./test_groupcache port
 	me := ":" + os.Args[1]
 	peers := groupcache.NewHTTPPool("http://localhost" + me)
-	peers.Set("http://localhost:8081", "http://localhost:8082", "http://localhost:8083")
+	peers.Set("http://localhost:8081", "http://localhost:8082")
 	helloworld := groupcache.NewGroup("helloworld", 1024*1024*1024*16, groupcache.GetterFunc(
 		func(ctx groupcache.Context, key string, dest groupcache.Sink) error {
 			//log.Println(me)
